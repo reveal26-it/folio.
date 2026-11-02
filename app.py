@@ -71,7 +71,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize State
 if "highlights" not in st.session_state: st.session_state.highlights = {}
 if "notables" not in st.session_state: st.session_state.notables = []
 if "page" not in st.session_state: st.session_state.page = "Reader"
@@ -111,69 +110,68 @@ if st.session_state.page == "Library":
 
 elif st.session_state.page == "Planner":
     st.markdown("<h1 style='text-align: center; font-family: Georgia; margin-bottom: 0;'>The Planner</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #666; font-family: Arial; margin-top: 0;'>Track your progress without guilt.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666; font-family: Arial; margin-top: 0;'>Read at your own pace.</p>", unsafe_allow_html=True)
     st.markdown("<hr style='border: 1px solid #C9A227; margin-bottom: 2rem;'>", unsafe_allow_html=True)
     
     col1, col2 = st.columns([1, 1])
     
-    total_words = len(ledger["word_tokens"])
-    
     with col1:
-        st.markdown("### The Schedule")
-        st.info(f"The Bible contains **{total_words:,}** words.")
+        st.markdown("### Plan a Book")
         
-        days_goal_str = st.text_input("I want to finish this in (days):", value="30")
-        pace_str = st.text_input("My reading pace (words per minute):", value="180")
+        book_names_p = [b["name"] for b in ledger["books"]]
+        p_book = st.selectbox("Select Book", book_names_p)
+        p_book_id = next(b["book_id"] for b in ledger["books"] if b["name"] == p_book)
         
-        if st.button("Calculate Schedule", type="primary"):
-            try:
-                days_goal = int(days_goal_str)
-                pace = int(pace_str)
-                if days_goal > 0 and pace > 0:
-                    minutes_per_day = total_words / (days_goal * pace)
-                    words_per_day = total_words / days_goal
-                    
-                    st.success(f"You need to read for **{minutes_per_day:.1f} minutes** per day.")
-                    st.write(f"That is roughly **{int(words_per_day):,} words** per day.")
-                    st.session_state.daily_target = words_per_day
-                else:
-                    st.error("Please enter numbers greater than 0.")
-            except ValueError:
-                st.error("Please enter valid numbers.")
+        # Calculate words in this specific book
+        book_nodes = [n for n in ledger["text_nodes"] if n["book_id"] == p_book_id]
+        book_node_ids = [str(n["node_id"]) for n in book_nodes]
+        book_words = len([t for t in ledger["word_tokens"] if str(t["node_id"]) in book_node_ids])
+        
+        num_chapters = len(set(n["chapter"] for n in book_nodes))
+        avg_words_per_chapter = book_words / num_chapters
+        
+        st.info(f"**{p_book}** has **{num_chapters} chapters** and **{book_words:,} words**.")
+        
+        # The user interacts with Time, not abstract numbers
+        minutes_per_chapter = st.number_input("How many minutes do you want to spend per chapter?", min_value=1, max_value=120, value=5)
+        
+        # The Estimate
+        wpm = 180 # Internal standard
+        estimated_words_read = minutes_per_chapter * wpm
+        
+        st.markdown("---")
+        st.markdown(f"**The Estimate:**")
+        if estimated_words_read >= avg_words_per_chapter:
+            st.success(f"At {minutes_per_chapter} minutes per chapter, you will finish each chapter on time.")
+        else:
+            needed_time = avg_words_per_chapter / wpm
+            st.warning(f"A chapter in {p_book} has about {int(avg_words_per_chapter):,} words. At 180 WPM, you actually need **{needed_time:.1f} minutes** per chapter to finish it.")
             
     with col2:
         st.markdown("### Today's Progress")
         
-        # Calculate words read based on completed chapters
+        # Calculate words read based on completed chapters in THIS book
         words_read = 0
+        chapters_completed_in_book = 0
+        
         for chapter_key in st.session_state.completed_chapters:
-            book_id_c, ch_num_c = chapter_key.split("_")
-            chapter_words = [t for t in ledger["word_tokens"] if str(t["node_id"]) in [str(n["node_id"]) for n in ledger["text_nodes"] if n["book_id"] == int(book_id_c) and n["chapter"] == int(ch_num_c)]]
-            words_read += len(chapter_words)
-            
-        percent_complete = (words_read / total_words) * 100
-        st.progress(min(percent_complete, 100.0))
-        st.write(f"**{percent_complete:.2f}%** of the text completed.")
-        st.write(f"You have read **{words_read:,}** words.")
+            b_id, c_num = chapter_key.split("_")
+            if int(b_id) == p_book_id:
+                chapters_completed_in_book += 1
+                ch_node_ids = [str(n["node_id"]) for n in ledger["text_nodes"] if n["book_id"] == int(b_id) and n["chapter"] == int(c_num)]
+                words_read += len([t for t in ledger["word_tokens"] if str(t["node_id"]) in ch_node_ids])
+                
+        percent_complete = (words_read / book_words) * 100 if book_words > 0 else 0
         
-        daily_target = st.session_state.get("daily_target", total_words / 30)
+        st.progress(min(percent_complete / 100, 1.0))
+        st.write(f"**{percent_complete:.1f}%** of {p_book} completed.")
+        st.write(f"You have read **{chapters_completed_in_book} out of {num_chapters}** chapters.")
         
-        if words_read >= daily_target:
-            st.success("You hit your daily goal! 🎉")
-        else:
-            remaining_today = daily_target - words_read
-            st.warning(f"You need {int(remaining_today):,} more words to hit your daily goal.")
-            
         st.markdown("---")
         st.markdown("**Mark a Chapter as Read:**")
         
-        # Simple UI to mark a chapter as read
         with st.form("mark_read"):
-            book_names_p = [b["name"] for b in ledger["books"]]
-            p_book = st.selectbox("Book", book_names_p, key="p_book")
-            p_book_id = next(b["book_id"] for b in ledger["books"] if b["name"] == p_book)
-            
-            p_chapters = list(set(n["chapter"] for n in ledger["text_nodes"] if n["book_id"] == p_book_id))
+            p_chapters = list(set(n["chapter"] for n in book_nodes))
             p_chapters.sort()
             p_chapter = st.selectbox("Chapter", p_chapters, key="p_chapter")
             
