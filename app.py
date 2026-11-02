@@ -1,4 +1,3 @@
-
 import streamlit as st
 import json
 import gzip
@@ -7,7 +6,7 @@ import urllib.request
 
 @st.cache_data
 def load_ledger():
-        with gzip.open("folio_ledger_full.json.gz", "rt") as f:
+    with gzip.open("folio_ledger_full.json.gz", "rt") as f:
         return json.load(f)
 
 @st.cache_data
@@ -78,7 +77,6 @@ if "page" not in st.session_state: st.session_state.page = "Reader"
 
 ledger = load_ledger()
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.markdown("<h2 style='font-family: Georgia; color: #1F1D1A;'>FOLIO</h2>", unsafe_allow_html=True)
     st.markdown("<hr style='border: 1px solid #C9A227; margin-top: 0;'>", unsafe_allow_html=True)
@@ -98,14 +96,13 @@ with st.sidebar:
     st.markdown(f"**Highlights:** {len(st.session_state.highlights)}")
     st.markdown(f"**Notables:** {len(st.session_state.notables)}")
 
-# --- ROUTING ---
 if st.session_state.page == "Library":
     st.markdown("<h1 style='text-align: center; font-family: Georgia;'>The Library</h1>", unsafe_allow_html=True)
     st.markdown("<hr style='border: 1px solid #C9A227; margin-bottom: 2rem;'>", unsafe_allow_html=True)
     st.markdown("""
     <div class="book-card">
-        <div class="book-title">Genesis (Literal Word Model)</div>
-        <div class="book-author">Platform Curation • BSB Interlinear</div>
+        <div class="book-title">The Literal Bible (BSB Interlinear)</div>
+        <div class="book-author">Platform Curation • 31,085 Verses</div>
         <span class="badge badge-verified">Vetted & Allowed</span>
     </div>
     """, unsafe_allow_html=True)
@@ -116,39 +113,27 @@ elif st.session_state.page == "Planner":
     st.markdown("<hr style='border: 1px solid #C9A227; margin-bottom: 2rem;'>", unsafe_allow_html=True)
     
     col1, col2 = st.columns([1, 1])
-    
     with col1:
         st.markdown("### Set Your Goal")
-        
-        # Calculate total words in Genesis 1 (for the POC)
         total_words = len(ledger["word_tokens"])
-        
-        st.info(f"Genesis 1 contains **{total_words}** words.")
-        
-        days_goal = st.number_input("I want to finish this in (days):", min_value=1, max_value=365, value=7)
+        st.info(f"The Bible contains **{total_words}** words.")
+        days_goal = st.number_input("I want to finish this in (days):", min_value=1, max_value=365, value=30)
         pace = st.number_input("My reading pace (words per minute):", min_value=50, max_value=500, value=180)
-        
         if st.button("Calculate Schedule", type="primary"):
-            # Math: Total Words / (Days * Pace)
             minutes_per_day = total_words / (days_goal * pace)
             st.success(f"You need to read for **{minutes_per_day:.1f} minutes** per day to finish on time.")
             
     with col2:
         st.markdown("### Today's Progress")
-        
-        # Simulate tracking progress
         words_read = st.number_input("How many words did you read today?", min_value=0, value=0)
-        
         if words_read > 0:
             percent_complete = (words_read / total_words) * 100
             st.progress(min(percent_complete / 100, 1.0))
-            st.write(f"**{percent_complete:.1f}%** of Genesis 1 completed.")
-            
+            st.write(f"**{percent_complete:.1f}%** of the text completed.")
             if words_read >= (total_words / days_goal):
                 st.success("You hit your daily goal! 🎉")
             else:
                 st.warning("You're a bit behind today, but that's okay. The schedule will adapt.")
-                
         else:
             st.progress(0.0)
             st.write("0% completed.")
@@ -161,11 +146,21 @@ elif st.session_state.page == "Reader":
     query_params = st.query_params
     clicked_word_id = query_params.get("word_id", None)
     
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### Navigation")
+        book_names = [b["name"] for b in ledger["books"]]
+        selected_book = st.selectbox("Select Book", book_names)
+        book_id = next(b["book_id"] for b in ledger["books"] if b["name"] == selected_book)
+        chapters = list(set(n["chapter"] for n in ledger["text_nodes"] if n["book_id"] == book_id))
+        chapters.sort()
+        selected_chapter = st.selectbox("Select Chapter", chapters)
+    
     col1, col2 = st.columns([2.5, 1])
     
     with col1:
-        st.markdown("<h3 style='font-family: Georgia;'>Genesis 1</h3>", unsafe_allow_html=True)
-        verses = [n for n in ledger["text_nodes"] if n["chapter"] == 1]
+        st.markdown(f"<h3 style='font-family: Georgia;'>{selected_book} {selected_chapter}</h3>", unsafe_allow_html=True)
+        verses = [n for n in ledger["text_nodes"] if n["book_id"] == book_id and n["chapter"] == selected_chapter]
         
         for v in verses:
             html_content = f"<span class='verse-number'>{v['verse']}</span>"
@@ -175,7 +170,6 @@ elif st.session_state.page == "Reader":
                 word_id = w["word_id"]
                 display_word = w["raw_word"]
                 
-                # Check annotations
                 css_class = "word-link"
                 if str(word_id) in st.session_state.highlights: css_class += " highlighted-word"
                 if str(word_id) in st.session_state.notables: css_class += " notable-word"
@@ -212,7 +206,6 @@ elif st.session_state.page == "Reader":
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Annotation buttons
                 word_id_str = str(target_word['word_id'])
                 st.markdown("<br>", unsafe_allow_html=True)
                 if word_id_str in st.session_state.highlights:
