@@ -71,9 +71,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Initialize State
 if "highlights" not in st.session_state: st.session_state.highlights = {}
 if "notables" not in st.session_state: st.session_state.notables = []
 if "page" not in st.session_state: st.session_state.page = "Reader"
+if "completed_chapters" not in st.session_state: st.session_state.completed_chapters = []
 
 ledger = load_ledger()
 
@@ -109,34 +111,80 @@ if st.session_state.page == "Library":
 
 elif st.session_state.page == "Planner":
     st.markdown("<h1 style='text-align: center; font-family: Georgia; margin-bottom: 0;'>The Planner</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #666; font-family: Arial; margin-top: 0;'>A flexible schedule without guilt.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666; font-family: Arial; margin-top: 0;'>Track your progress without guilt.</p>", unsafe_allow_html=True)
     st.markdown("<hr style='border: 1px solid #C9A227; margin-bottom: 2rem;'>", unsafe_allow_html=True)
     
     col1, col2 = st.columns([1, 1])
+    
+    total_words = len(ledger["word_tokens"])
+    
     with col1:
-        st.markdown("### Set Your Goal")
-        total_words = len(ledger["word_tokens"])
-        st.info(f"The Bible contains **{total_words}** words.")
-        days_goal = st.number_input("I want to finish this in (days):", min_value=1, max_value=365, value=30)
-        pace = st.number_input("My reading pace (words per minute):", min_value=50, max_value=500, value=180)
+        st.markdown("### The Schedule")
+        st.info(f"The Bible contains **{total_words:,}** words.")
+        
+        days_goal_str = st.text_input("I want to finish this in (days):", value="30")
+        pace_str = st.text_input("My reading pace (words per minute):", value="180")
+        
         if st.button("Calculate Schedule", type="primary"):
-            minutes_per_day = total_words / (days_goal * pace)
-            st.success(f"You need to read for **{minutes_per_day:.1f} minutes** per day to finish on time.")
+            try:
+                days_goal = int(days_goal_str)
+                pace = int(pace_str)
+                if days_goal > 0 and pace > 0:
+                    minutes_per_day = total_words / (days_goal * pace)
+                    words_per_day = total_words / days_goal
+                    
+                    st.success(f"You need to read for **{minutes_per_day:.1f} minutes** per day.")
+                    st.write(f"That is roughly **{int(words_per_day):,} words** per day.")
+                    st.session_state.daily_target = words_per_day
+                else:
+                    st.error("Please enter numbers greater than 0.")
+            except ValueError:
+                st.error("Please enter valid numbers.")
             
     with col2:
         st.markdown("### Today's Progress")
-        words_read = st.number_input("How many words did you read today?", min_value=0, value=0)
-        if words_read > 0:
-            percent_complete = (words_read / total_words) * 100
-            st.progress(min(percent_complete / 100, 1.0))
-            st.write(f"**{percent_complete:.1f}%** of the text completed.")
-            if words_read >= (total_words / days_goal):
-                st.success("You hit your daily goal! 🎉")
-            else:
-                st.warning("You're a bit behind today, but that's okay. The schedule will adapt.")
+        
+        # Calculate words read based on completed chapters
+        words_read = 0
+        for chapter_key in st.session_state.completed_chapters:
+            book_id_c, ch_num_c = chapter_key.split("_")
+            chapter_words = [t for t in ledger["word_tokens"] if str(t["node_id"]) in [str(n["node_id"]) for n in ledger["text_nodes"] if n["book_id"] == int(book_id_c) and n["chapter"] == int(ch_num_c)]]
+            words_read += len(chapter_words)
+            
+        percent_complete = (words_read / total_words) * 100
+        st.progress(min(percent_complete, 100.0))
+        st.write(f"**{percent_complete:.2f}%** of the text completed.")
+        st.write(f"You have read **{words_read:,}** words.")
+        
+        daily_target = st.session_state.get("daily_target", total_words / 30)
+        
+        if words_read >= daily_target:
+            st.success("You hit your daily goal! 🎉")
         else:
-            st.progress(0.0)
-            st.write("0% completed.")
+            remaining_today = daily_target - words_read
+            st.warning(f"You need {int(remaining_today):,} more words to hit your daily goal.")
+            
+        st.markdown("---")
+        st.markdown("**Mark a Chapter as Read:**")
+        
+        # Simple UI to mark a chapter as read
+        with st.form("mark_read"):
+            book_names_p = [b["name"] for b in ledger["books"]]
+            p_book = st.selectbox("Book", book_names_p, key="p_book")
+            p_book_id = next(b["book_id"] for b in ledger["books"] if b["name"] == p_book)
+            
+            p_chapters = list(set(n["chapter"] for n in ledger["text_nodes"] if n["book_id"] == p_book_id))
+            p_chapters.sort()
+            p_chapter = st.selectbox("Chapter", p_chapters, key="p_chapter")
+            
+            if st.form_submit_button("Mark as Read"):
+                chapter_key = f"{p_book_id}_{p_chapter}"
+                if chapter_key not in st.session_state.completed_chapters:
+                    st.session_state.completed_chapters.append(chapter_key)
+                    st.success(f"Marked {p_book} {p_chapter} as read!")
+                    st.rerun()
+                else:
+                    st.info("You already marked this chapter as read.")
 
 elif st.session_state.page == "Reader":
     st.markdown("<h1 style='text-align: center; font-family: Georgia; margin-bottom: 0;'>The Reader</h1>", unsafe_allow_html=True)
