@@ -6,7 +6,7 @@ import urllib.request
 
 @st.cache_data
 def load_ledger():
-    with open("folio_ledger.json", "r") as f:
+    with open("folio_ledger_v1.json", "r") as f:
         return json.load(f)
 
 @st.cache_data
