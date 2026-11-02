@@ -1,12 +1,13 @@
 
 import streamlit as st
 import json
+import gzip
 import re
 import urllib.request
 
 @st.cache_data
 def load_ledger():
-    with open("folio_ledger_v1.json", "r") as f:
+        with gzip.open("folio_ledger_full.json.gz", "rt") as f:
         return json.load(f)
 
 @st.cache_data
